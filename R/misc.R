@@ -76,10 +76,20 @@ glog <- function(x, q=0.03){
 #' @param x The input matrix or datafram
 #' @param center Centered by median
 #' @param scale Scaled by 1.4826*MAD
+#' @param censor Whether to censor the scaled value. If a positive integer value, the upper limit will be this value and the lower limit will be the negative value.
+#' @param useMad Whether use row z score or modified z score (useMad = TRUE)
 #' @export
 
-mscale <- function(x, center = TRUE, scale = TRUE){
-  x.scaled <- apply(x, 1, function(y) (y-median(y))/(1.4826*mad(y)))
+mscale <- function(x, center = TRUE, scale = TRUE, censor = NULL, useMad = FALSE){
+  if (useMad){
+    x.scaled <- apply(x, 1, function(y) (y-median(y))/(1.4826*mad(y)))
+  } else {
+    x.scaled <- apply(x, 1, function(y) (y-mean(y))/(sd(y)))
+  }
+  if (!is.null(censor)) {
+    x.scaled[x.scaled > censor] <- censor
+    x.scaled[x.scaled < -censor] <- -censor
+  }
   return(t(as.matrix(x.scaled)))
 }
 
