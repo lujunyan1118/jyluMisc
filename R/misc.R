@@ -81,11 +81,28 @@ glog <- function(x, q=0.03){
 #' @export
 
 mscale <- function(x, center = TRUE, scale = TRUE, censor = NULL, useMad = FALSE){
-  if (useMad){
-    x.scaled <- apply(x, 1, function(y) (y-median(y))/(1.4826*mad(y)))
+  if (scale & center) {
+    if (useMad) {
+      x.scaled <- apply(x, 1, function(y) (y-median(y))/(1.4826*mad(y)))
+    } else {
+      x.scaled <- apply(x, 1, function(y) (y-mean(y))/(sd(y)))
+    }
+  } else if (center & !scale) {
+    if (useMad) {
+      x.scaled <- apply(x, 1, function(y) (y-median(y)))
+    } else {
+      x.scaled <- apply(x, 1, function(y) (y-mean(y)))
+    }
+  } else if (!center & scale) {
+    if (useMad) {
+      x.scaled <- apply(x, 1, function(y) y/(1.4826*mad(y)))
+    } else {
+      x.scaled <- apply(x, 1, function(y) y/(sd(y)))
+    }
   } else {
-    x.scaled <- apply(x, 1, function(y) (y-mean(y))/(sd(y)))
+    x.scale = x
   }
+
   if (!is.null(censor)) {
     x.scaled[x.scaled > censor] <- censor
     x.scaled[x.scaled < -censor] <- -censor
@@ -136,6 +153,7 @@ highCor <- function(X, cut = 0.75, method = "pearson") {
 #' @param width The width of the page
 #' @param height The height of the page
 #' @export
+#' @import gridExtra
 
 makepdf <- function(x, name, ncol = 3, nrow = 2, figNum =NULL, width =20, height = 12) {
   require(gridExtra)
@@ -152,136 +170,77 @@ makepdf <- function(x, name, ncol = 3, nrow = 2, figNum =NULL, width =20, height
 }
 
 
-#' Function to run enrichment analysis in R
+#' Convert tidy table to SummarizedExperiment object
 #'
-#' A funtion to perform GSEA or PAGE analysis
-#' @param inputTab Ranked gene list for enrichment analysis, gene symbols as rownames and column stat contains the statistics for the ranking.
-#' @param gmtFile A path to the gene signature file.
-#' @param GSAmethod Method for enrichment analysis, currently supports GSEA and PAGE
-#' @param nPerm Number of permutations for GSEA analysis
+#' Function for converting a tidy table to SummarizedExperiment object.
+#' @param tidyTable Input tidy table
+#' @param rowID A character variable specifying the column in the tidy table that should be used as row identifiers in the SE object.
+#' @param colID A character variable specifying the column in the tidy table that should be used as column identifiers in the SE object.
+#' @param values A character or a vector of characters, specifying the columns that should be treated as measurements (assays).
+#' @param annoRow A character or a vector of characters, specifying the columns that should be used a rowData
+#' @param annoCol A character or a vector of characters, specifying the columns that should be used a colData.
 #' @export
+#' @import SummarizedExperiment
+#'
+tidyToSum <- function(tidyTable, rowID, colID, values, annoRow, annoCol) {
+  #prepare value matrix
+  matList <- lapply(values, function(n) {
+    dplyr::select(tidyTable, !!rowID, !!colID, !!n) %>%
+      spread(key = !!colID, value = !!n) %>%
+      data.frame(stringsAsFactors = FALSE) %>% column_to_rownames(rowID) %>%
+      as.matrix()
+  })
+  names(matList) <- values
 
-runGSEA <- function(inputTab,gmtFile,GSAmethod="gsea",nPerm=1000){
-  require(piano)
-  inGMT <- loadGSC(gmtFile,type="gmt")
-  rankTab <- inputTab[order(inputTab[,1],decreasing = TRUE),,drop=FALSE] #re-rank by score
-
-  if (GSAmethod == "gsea"){
-    #readin geneset database
-    #GSEA analysis
-    res <- runGSA(geneLevelStats = rankTab,geneSetStat = GSAmethod,adjMethod = "fdr",
-                  gsc=inGMT, signifMethod = 'geneSampling', nPerm = nPerm, verbose = FALSE)
-    GSAsummaryTable(res)
-  } else if (GSAmethod == "page"){
-    res <- runGSA(geneLevelStats = rankTab,geneSetStat = GSAmethod,adjMethod = "fdr",
-                  gsc=inGMT, signifMethod = 'nullDist', verbose = FALSE)
-    GSAsummaryTable(res)
-  }
+  #prepare row annoation
+  rowAnno <- tidyTable[,c(rowID, annoRow)]
+  rowAnno <- rowAnno[!duplicated(rowAnno[[rowID]]),] %>% data.frame(stringsAsFactors = FALSE) %>%
+    column_to_rownames(rowID)
+  rowAnno <- rowAnno[rownames(matList[[1]]),,drop = FALSE ]
+  #prepare column annotation
+  colAnno <- tidyTable[,c(colID, annoCol)]
+  colAnno <- colAnno[!duplicated(colAnno[[colID]]),] %>% data.frame(stringsAsFactors = FALSE) %>%
+    column_to_rownames(colID)
+  colAnno <- colAnno[colnames(matList[[1]]), ,drop=FALSE]
+  # assemble
+  m <- SummarizedExperiment(assays = matList, colData= colAnno)
+  rowData(m) <- rowAnno
+  return(m)
 }
 
-
-#' Barplot for enrichment analysis result
+#' Convert SummarizedExperiment object to a tidy table
 #'
-#' A function to plot enrichment analysis result from runGSEA function
-#' @param resTab A list object of result tables from runGSEA function
-#' @param pCut The cutoff for p-values of signatures to be plot
-#' @param ifFDR Whether to use FDR cutoff or raw p value cutoff (default)
-#' @param setName y axis label
+#' Function for converting a SummarizedExperiment object to a tidy table.
+#' @param seObject Input SummarizedExperiment object.
+#' @param rowID A character variable specifying the name of row identifier.
+#' @param colID A character variable specifying the name of column identifier.
 #' @export
+#' @import SummarizedExperiment
 #'
-plotEnrichmentBar <- function(resTab, pCut = 0.05, ifFDR = FALSE, setName = "Signatures") {
-  pList <- list()
-  rowNum <- c()
-  for (i in names(resTab)) {
-    plotTab <- resTab[[i]]
-    if (ifFDR) {
-      plotTab <- dplyr::filter(plotTab, `p adj (dist.dir.up)` <= pCut | `p adj (dist.dir.dn)` <= pCut)
-    } else {
-      plotTab <- dplyr::filter(plotTab, `p (dist.dir.up)` <= pCut | `p (dist.dir.dn)` <= pCut)
-    }
-    if (nrow(plotTab) == 0) {
-      print("No sets passed the criteria")
-      next
-    } else {
-      #firstly, process the result table
-      plotTab <- apply(plotTab, 1, function(x) {
-        statSign <- as.numeric(x[3])
-        data.frame(Name = x[1], p = as.numeric(ifelse(statSign >= 0, x[4], x[6])), geneNum = ifelse(statSign >= 0, x[8], x[9]),
-                   Direction = ifelse(statSign > 0, "Up", "Down"), stringsAsFactors = FALSE)
-      }) %>% do.call(rbind,.)
+#'
+sumToTiday <- function(seObject, rowID = "rowID", colID = "colID") {
 
-      plotTab$Name <- sprintf("%s (%s)",plotTab$Name,plotTab$geneNum)
-      plotTab <- plotTab[with(plotTab,order(Direction, p, decreasing=TRUE)),]
-      plotTab$Direction <- factor(plotTab$Direction, levels = c("Down","Up"))
-      plotTab$Name <- factor(plotTab$Name, levels = plotTab$Name)
-      #plot the barplot
-      pList[[i]] <- ggplot(data=plotTab, aes(x=Name, y= -log10(p), fill=Direction)) +
-        geom_bar(position="dodge",stat="identity", width = 0.5) +
-        scale_fill_manual(values=c(Up = "blue", Down = "red")) +
-        coord_fixed(ratio = 0.5) + coord_flip() + xlab(setName) +
-        ylab(expression(-log[10]*'('*p*')')) +
-        ggtitle(i) + theme_bw() + theme(plot.title = element_text(face = "bold", hjust =0.5),
-                                        axis.title = element_text(size=15))
-      rowNum <-c(rowNum,nrow(plotTab))
-    }
-  }
+  tidyTable <- lapply(assayNames(seObject),function(n) {
+    valTab <- assays(seObject)[[n]] %>% data.frame() %>%
+      rownames_to_column(rowID) %>%
+      gather(key = !!colID, value = "val", -!!rowID) %>%
+      mutate(assay = n)
+  }) %>% bind_rows() %>%
+    spread(key = assay, value = val)
 
-  if (length(pList) == 0) {
-    print("Nothing to plot")
-  } else {
-    rowNum <- rowNum
-    grobList <- lapply(pList, ggplotGrob)
-    grobList <- do.call(gridExtra::gtable_rbind,c(grobList,size="max"))
-    panels <- grobList$layout$t[grep("panel", grobList$layout$name)]
-    grobList$heights[panels] <- unit(rowNum, "null")
-  }
-  return(grobList)
+  #append row annotations
+  rowAnno <- rowData(seObject) %>% data.frame() %>%
+    rownames_to_column(rowID)
+  tidyTable <- left_join(tidyTable, rowAnno, by = rowID)
+
+  #append column annotations
+  colAnno <- colData(seObject) %>% data.frame() %>%
+    rownames_to_column(colID)
+  tidyTable <- left_join(tidyTable, colAnno, by = colID)
+
+
+  return(as_tibble(tidyTable))
 }
 
 
 
-
-#' Model object for fitting the IC50 curve
-#'
-#' Use the drc package to perform IC50 fit. Can be directly used for geom_smooth() in ggplot2
-#' @param formula Formula for the curve fitting.
-#' @param data A data frame contain the raw concentration and the viability value. The viability should not be the percent viability value.
-#' @param weigths Not used, mainly for geom_smooth() purpose
-#' @param ... Parameters passed to logLogisticRegression()
-#' @export
-#' @import drc
-fitIC50 <- function(formula, data = NULL, weights, ...) {
-  if (! is.null(data) ) {
-    modelFrame <- model.frame(formula, data)
-  } else {
-    modelFrame <- model.frame(formula)
-  }
-  parm_fit <- drm(modelFrame, fct = LL2.3u(), ...)
-  newModel <- list(model = modelFrame, formula = formula, parm_fit = parm_fit)
-  class(newModel) <- "fitIC50"
-  return(newModel)
-}
-
-
-#' Predicted values based on IC50 fit
-#'
-#' Generic function for ic50 class generated from fitIC50 function.
-#' @param object Object of class inheriting from "fitIC50"
-#' @param newdata An optional data frame in which to look for variables with which to predict.If omitted, the fitted values are used.
-#' @param se.fit Not used, mainly for geom_smooth purpose
-#' @param level Not used, mainly for geom_smooth purpose
-#' @param interval Not used, mainly for geom_smooth purpose
-#' @export
-#'
-predict.fitIC50 <- function(object, newdata = NULL, se.fit = FALSE, level = 0.95 , interval = c("none", "confidence", "prediction")) {
-
-  if (is.null(newdata))
-    newdata <- object$model else
-      newdata <- newdata
-
-      parm_fit <- object$parm_fit
-
-  res <- predict(parm_fit, newdata)
-
-  return(res)
-}

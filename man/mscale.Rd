@@ -4,7 +4,8 @@
 \alias{mscale}
 \title{Calculate modified row z-scores}
 \usage{
-mscale(x, center = TRUE, scale = TRUE, censor = NULL, useMad = FALSE)
+mscale(x, center = TRUE, scale = TRUE, censor = NULL,
+  useMad = FALSE)
 }
 \arguments{
 \item{x}{The input matrix or datafram}
