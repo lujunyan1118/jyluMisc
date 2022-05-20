@@ -4,9 +4,19 @@
 \alias{runCamera}
 \title{Function to run enrichment analysis using Camera from LIMMA}
 \usage{
-runCamera(exprMat, design, gmtFile, id = NULL, contrast = ncol(design),
-  method = "camera", pCut = 0.05, ifFDR = FALSE,
-  removePrefix = NULL, plotTitle = "", insideLegend = FALSE)
+runCamera(
+  exprMat,
+  design,
+  gmtFile,
+  id = NULL,
+  contrast = ncol(design),
+  method = "camera",
+  pCut = 0.05,
+  ifFDR = FALSE,
+  removePrefix = NULL,
+  plotTitle = "",
+  insideLegend = FALSE
+)
 }
 \arguments{
 \item{exprMat}{Gene expression matrix. Genes as rows and samples as columns.}

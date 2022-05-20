@@ -4,10 +4,20 @@
 \alias{km}
 \title{Wrapper for plotting Kaplan-Meier plot}
 \usage{
-km(response, time, endpoint, titlePlot = "KM plot", pval = NULL,
-  stat = "median", maxTime = NULL, showP = TRUE, showTable = FALSE,
-  ylab = "Fraction", xlab = "Time (years)", table_ratio = c(0.7,
-  0.3))
+km(
+  response,
+  time,
+  endpoint,
+  titlePlot = "KM plot",
+  pval = NULL,
+  stat = "median",
+  maxTime = NULL,
+  showP = TRUE,
+  showTable = FALSE,
+  ylab = "Fraction",
+  xlab = "Time (years)",
+  table_ratio = c(0.7, 0.3)
+)
 }
 \arguments{
 \item{response}{The response variable}

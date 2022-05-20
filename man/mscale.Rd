@@ -4,15 +4,14 @@
 \alias{mscale}
 \title{Calculate modified row z-scores}
 \usage{
-mscale(x, center = TRUE, scale = TRUE, censor = NULL,
-  useMad = FALSE)
+mscale(x, center = TRUE, scale = TRUE, censor = NULL, useMad = FALSE)
 }
 \arguments{
 \item{x}{The input matrix or datafram}
 
 \item{center}{Centered by median}
 
-\item{scale}{Scaled by 1.4826*MAD}
+\item{scale}{Scaled by SD (or 1.4826*MAD)}
 
 \item{censor}{Whether to censor the scaled value. If a positive integer value, the upper limit will be this value and the lower limit will be the negative value.}
 

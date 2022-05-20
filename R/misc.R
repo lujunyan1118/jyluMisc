@@ -70,12 +70,26 @@ glog <- function(x, q=0.03){
   log((x+sqrt(x^2 +c^2))/2)
 }
 
+#' Return MAD or meanAD based on whether MAD equals zero
+#'
+#' Calculate mean absolute deviation or median absolute deviation for robust z-score calcualte
+#'
+#' @param x Input numeric vector
+#' @export
+
+meanAD <- function(x) {
+  md <- mad(x, na.rm = TRUE)
+  if (md == 0)
+    {md <- (sum(abs(x-mean(x,na.rm=T)),na.rm = T)/length(x))*1.253314}
+  return(md)
+}
+
 #' Calculate modified row z-scores
 #'
 #' Row centered by median and scaled by median absolute deviation
 #' @param x The input matrix or datafram
 #' @param center Centered by median
-#' @param scale Scaled by 1.4826*MAD
+#' @param scale Scaled by SD (or 1.4826*MAD)
 #' @param censor Whether to censor the scaled value. If a positive integer value, the upper limit will be this value and the lower limit will be the negative value.
 #' @param useMad Whether use row z score or modified z score (useMad = TRUE)
 #' @export
@@ -83,29 +97,34 @@ glog <- function(x, q=0.03){
 mscale <- function(x, center = TRUE, scale = TRUE, censor = NULL, useMad = FALSE){
   if (scale & center) {
     if (useMad) {
-      x.scaled <- apply(x, 1, function(y) (y-median(y))/(1.4826*mad(y)))
+      x.scaled <- apply(x, 1, function(y) (y-median(y,na.rm = T))/meanAD(y))
     } else {
-      x.scaled <- apply(x, 1, function(y) (y-mean(y))/(sd(y)))
+      x.scaled <- apply(x, 1, function(y) (y-mean(y,na.rm=T))/sd(y,na.rm = T))
     }
   } else if (center & !scale) {
     if (useMad) {
-      x.scaled <- apply(x, 1, function(y) (y-median(y)))
+      x.scaled <- apply(x, 1, function(y) (y-median(y,na.rm=T)))
     } else {
-      x.scaled <- apply(x, 1, function(y) (y-mean(y)))
+      x.scaled <- apply(x, 1, function(y) (y-mean(y,na.rm=T)))
     }
   } else if (!center & scale) {
     if (useMad) {
-      x.scaled <- apply(x, 1, function(y) y/(1.4826*mad(y)))
+      x.scaled <- apply(x, 1, function(y) y/meanAD(y))
     } else {
-      x.scaled <- apply(x, 1, function(y) y/(sd(y)))
+      x.scaled <- apply(x, 1, function(y) y/sd(y,na.rm = T))
     }
   } else {
-    x.scale = x
+    x.scaled <- t(x)
   }
 
   if (!is.null(censor)) {
-    x.scaled[x.scaled > censor] <- censor
-    x.scaled[x.scaled < -censor] <- -censor
+    if (length(censor) == 1) {
+      x.scaled[x.scaled > censor] <- censor
+      x.scaled[x.scaled < -censor] <- -censor
+    } else {
+      x.scaled[x.scaled > censor[2]] <- censor[2] #higher limit
+      x.scaled[x.scaled < censor[1]] <- censor[1] #lower limit
+    }
   }
   return(t(as.matrix(x.scaled)))
 }
@@ -187,7 +206,7 @@ tidyToSum <- function(tidyTable, rowID, colID, values, annoRow, annoCol) {
   matList <- lapply(values, function(n) {
     dplyr::select(tidyTable, !!rowID, !!colID, !!n) %>%
       spread(key = !!colID, value = !!n) %>%
-      data.frame(stringsAsFactors = FALSE) %>% column_to_rownames(rowID) %>%
+      column_to_rownames(rowID) %>%
       as.matrix()
   })
   names(matList) <- values
@@ -218,29 +237,35 @@ tidyToSum <- function(tidyTable, rowID, colID, values, annoRow, annoCol) {
 #' @import SummarizedExperiment
 #'
 #'
-sumToTiday <- function(seObject, rowID = "rowID", colID = "colID") {
+sumToTidy <- function(seObject, rowID = "rowID", colID = "colID") {
 
   tidyTable <- lapply(assayNames(seObject),function(n) {
-    valTab <- assays(seObject)[[n]] %>% data.frame() %>%
-      rownames_to_column(rowID) %>%
+    valTab <- assays(seObject)[[n]] %>%
+      as_tibble(rownames = "rowID") %>%
       gather(key = !!colID, value = "val", -!!rowID) %>%
       mutate(assay = n)
   }) %>% bind_rows() %>%
     spread(key = assay, value = val)
 
   #append row annotations
-  rowAnno <- rowData(seObject) %>% data.frame() %>%
-    rownames_to_column(rowID)
+  rowAnno <- rowData(seObject) %>%
+    as_tibble(rownames = "rowID")
   tidyTable <- left_join(tidyTable, rowAnno, by = rowID)
 
   #append column annotations
-  colAnno <- colData(seObject) %>% data.frame() %>%
-    rownames_to_column(colID)
+  colAnno <- colData(seObject) %>%
+    as_tibble(rownames = "colID")
   tidyTable <- left_join(tidyTable, colAnno, by = colID)
 
 
   return(as_tibble(tidyTable))
 }
 
-
+#' Generalized log2 transformation
+#'
+#' Function for generalized log2 transformation, can be applied to 0 and negative values
+#' @param x Input number
+#' @export
+#'
+glog2 <- function(x) ((asinh(x)-log(2))/log(2))
 

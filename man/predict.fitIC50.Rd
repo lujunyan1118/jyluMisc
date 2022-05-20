@@ -4,8 +4,13 @@
 \alias{predict.fitIC50}
 \title{Predicted values based on IC50 fit}
 \usage{
-\method{predict}{fitIC50}(object, newdata = NULL, se.fit = FALSE,
-  level = 0.95, interval = c("none", "confidence", "prediction"))
+\method{predict}{fitIC50}(
+  object,
+  newdata = NULL,
+  se.fit = FALSE,
+  level = 0.95,
+  interval = c("none", "confidence", "prediction")
+)
 }
 \arguments{
 \item{object}{Object of class inheriting from "fitIC50"}

@@ -4,8 +4,7 @@
 \alias{plotEnrichmentBar}
 \title{Barplot for enrichment analysis result}
 \usage{
-plotEnrichmentBar(resTab, pCut = 0.05, ifFDR = FALSE,
-  setName = "Signatures")
+plotEnrichmentBar(resTab, pCut = 0.05, ifFDR = FALSE, setName = "Signatures")
 }
 \arguments{
 \item{resTab}{A list object of result tables from runGSEA function}

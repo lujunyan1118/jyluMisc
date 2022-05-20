@@ -4,8 +4,7 @@
 \alias{makepdf}
 \title{Plot a list of ggplot object}
 \usage{
-makepdf(x, name, ncol = 3, nrow = 2, figNum = NULL, width = 20,
-  height = 12)
+makepdf(x, name, ncol = 3, nrow = 2, figNum = NULL, width = 20, height = 12)
 }
 \arguments{
 \item{x}{A list of ggplot object}
