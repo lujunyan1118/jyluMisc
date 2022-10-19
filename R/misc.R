@@ -238,6 +238,10 @@ tidyToSum <- function(tidyTable, rowID, colID, values, annoRow, annoCol) {
 #'
 #'
 sumToTidy <- function(seObject, rowID = "rowID", colID = "colID") {
+  #check if assay names are present and correct
+  if (any(c("",NA) %in% assayNames(seObject))) {
+    stop("Check assay names!")
+  }
 
   tidyTable <- lapply(assayNames(seObject),function(n) {
     valTab <- assays(seObject)[[n]] %>%
@@ -267,5 +271,32 @@ sumToTidy <- function(seObject, rowID = "rowID", colID = "colID") {
 #' @param x Input number
 #' @export
 #'
-glog2 <- function(x) ((asinh(x)-log(2))/log(2))
+glog2 <- function(x) {
+  (asinh(x)-log(2))/log(2)
+}
+
+#' Perform associations test between two vectors of any type
+#' @param var1 first vector of variable
+#' @param var2 second vector of variables
+#' @param correlation_method method used for correlation test
+#' @export
+#'
+#'
+testAssociation <- function(var1, var2, correlation_method = "pearson") {
+  stopifnot(correlation_method %in% c("pearson","spearman"))
+  p <- tryCatch({
+    if (is.numeric(var1) & is.numeric(var2)) {
+      cor.test(var1, var2, method = correlation_method)$p.value
+    } else if (! (is.numeric(var1) | is.numeric(var2))) {
+      chisq.test(factor(var1), factor(var2))$p.value
+    } else if (is.numeric(var1) & !is.numeric(var2)) {
+      aovRes <- summary(aov(var1 ~ factor(var2)))
+      aovRes[[1]][5][1,1]
+    } else if (is.numeric(var2) & !is.numeric(var1)) {
+      aovRes <- summary(aov(var2 ~ factor(var1)))
+      aovRes[[1]][5][1,1]
+    }}, error = function(err) NA)
+  return(data.frame(pVal = p))
+}
+
 
