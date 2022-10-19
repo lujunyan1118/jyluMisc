@@ -275,28 +275,49 @@ glog2 <- function(x) {
   (asinh(x)-log(2))/log(2)
 }
 
-#' Perform associations test between two vectors of any type
-#' @param var1 first vector of variable
-#' @param var2 second vector of variables
+#' Perform associations test between columns from two tables
+#'
+#' Function to perform associations test between the columns from two tables.
+#' The testing method will be selected automatically based on the value types.
+#'
+#' @param tabX the first table that contains columns to be tested
+#' @param tabY the second table that contains columns to be tested
+#' @param joinID the column that can be used to join the two tables
 #' @param correlation_method method used for correlation test
+#' @return a table with test results
 #' @export
 #'
 #'
-testAssociation <- function(var1, var2, correlation_method = "pearson") {
-  stopifnot(correlation_method %in% c("pearson","spearman"))
-  p <- tryCatch({
-    if (is.numeric(var1) & is.numeric(var2)) {
-      cor.test(var1, var2, method = correlation_method)$p.value
-    } else if (! (is.numeric(var1) | is.numeric(var2))) {
-      chisq.test(factor(var1), factor(var2))$p.value
-    } else if (is.numeric(var1) & !is.numeric(var2)) {
-      aovRes <- summary(aov(var1 ~ factor(var2)))
-      aovRes[[1]][5][1,1]
-    } else if (is.numeric(var2) & !is.numeric(var1)) {
-      aovRes <- summary(aov(var2 ~ factor(var1)))
-      aovRes[[1]][5][1,1]
-    }}, error = function(err) NA)
-  return(data.frame(pVal = p))
+testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson") {
+  fullTab <- left_join(tabX, tabY, by = joinID)
+  resTab <- lapply(seq(ncol(tabX)-1), function(i) {
+    lapply(seq(ncol(tabY)-1), function(j) {
+
+      indexX <- i+1
+      indexY <- ncol(tabX) + j
+
+      var1 <- fullTab[[indexX]]
+      var2 <- fullTab[[indexY]]
+
+      p <- tryCatch({
+        if (is.numeric(var1) & is.numeric(var2)) {
+          cor.test(var1, var2, method = correlation_method, use = "pairwise.complete.obs")$p.value
+        } else if (! (is.numeric(var1) | is.numeric(var2))) {
+          chisq.test(factor(var1), factor(var2))$p.value
+        } else if (is.numeric(var1) & !is.numeric(var2)) {
+          aovRes <- summary(aov(var1 ~ factor(var2)))
+          aovRes[[1]][5][1,1]
+        } else if (is.numeric(var2) & !is.numeric(var1)) {
+          aovRes <- summary(aov(var2 ~ factor(var1)))
+          aovRes[[1]][5][1,1]
+        }}, error = function(err) NA)
+
+      data.frame(var1 = colnames(tabX)[i+1], var2 = colnames(tabY)[j+1],
+                 p = p, stringsAsFactors = FALSE)
+
+    }) %>% bind_rows()
+  }) %>% bind_rows() %>%
+    arrange(p)
+
+  return(resTab)
 }
-
-
