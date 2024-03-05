@@ -212,15 +212,21 @@ tidyToSum <- function(tidyTable, rowID, colID, values, annoRow, annoCol) {
   names(matList) <- values
 
   #prepare row annoation
-  rowAnno <- tidyTable[,c(rowID, annoRow)]
+  rowAnno <- tidyTable[,unique(c(rowID, annoRow))]
   rowAnno <- rowAnno[!duplicated(rowAnno[[rowID]]),] %>% data.frame(stringsAsFactors = FALSE) %>%
     column_to_rownames(rowID)
+  #if rowID is also used as row annotation, then copy it back to the data table
+  if (rowID %in% annoRow) rowAnno[[rowID]] <- rownames(rowAnno)
   rowAnno <- rowAnno[rownames(matList[[1]]),,drop = FALSE ]
+
   #prepare column annotation
-  colAnno <- tidyTable[,c(colID, annoCol)]
+  colAnno <- tidyTable[,unique(c(colID, annoCol))]
   colAnno <- colAnno[!duplicated(colAnno[[colID]]),] %>% data.frame(stringsAsFactors = FALSE) %>%
     column_to_rownames(colID)
+  #if colID is also used as column annotation, then copy it back to the data table
+  if (colID %in% annoCol) colAnno[[colID]] <- rownames(colAnno)
   colAnno <- colAnno[colnames(matList[[1]]), ,drop=FALSE]
+
   # assemble
   m <- SummarizedExperiment(assays = matList, colData= colAnno)
   rowData(m) <- rowAnno
@@ -245,20 +251,23 @@ sumToTidy <- function(seObject, rowID = "rowID", colID = "colID") {
 
   tidyTable <- lapply(assayNames(seObject),function(n) {
     valTab <- assays(seObject)[[n]] %>%
-      as_tibble(rownames = "rowID") %>%
+      as_tibble(rownames = rowID) %>%
       gather(key = !!colID, value = "val", -!!rowID) %>%
       mutate(assay = n)
   }) %>% bind_rows() %>%
     spread(key = assay, value = val)
 
   #append row annotations
+  if (rowID %in% colnames(rowData(seObject))) rowData(seObject)[[rowID]] <- NULL #if the specified rowID is also present
   rowAnno <- rowData(seObject) %>%
-    as_tibble(rownames = "rowID")
+    as_tibble(rownames = rowID)
+
   tidyTable <- left_join(tidyTable, rowAnno, by = rowID)
 
   #append column annotations
+  if (colID %in% colnames(colData(seObject))) colData(seObject)[[colID]] <- NULL #if the specified colID is also present
   colAnno <- colData(seObject) %>%
-    as_tibble(rownames = "colID")
+    as_tibble(rownames = colID)
   tidyTable <- left_join(tidyTable, colAnno, by = colID)
 
 
@@ -284,11 +293,16 @@ glog2 <- function(x) {
 #' @param tabY the second table that contains columns to be tested
 #' @param joinID the column that can be used to join the two tables
 #' @param correlation_method method used for correlation test
+#' @param plot whether to return a P-value heatmap
+#' @param pCut cut-off for p-value or adjusted p-value
+#' @param ifFdr whether to show nominal P-value or adjusted P-value
+#' @param pMax censoring the -log10(P-value) or -log10(adjusted P-value) above this threshold. Default value is 12
 #' @return a table with test results
 #' @export
 #'
 #'
-testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson") {
+testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson", plot = FALSE,
+                            pCut = 0.01, ifFdr = FALSE, pMax = 12) {
   fullTab <- left_join(tabX, tabY, by = joinID)
   resTab <- lapply(seq(ncol(tabX)-1), function(i) {
     lapply(seq(ncol(tabY)-1), function(j) {
@@ -313,11 +327,33 @@ testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson") 
         }}, error = function(err) NA)
 
       data.frame(var1 = colnames(tabX)[i+1], var2 = colnames(tabY)[j+1],
-                 p = p, stringsAsFactors = FALSE)
+                 p = p, p.adj = p.adjust(p, method = "BH"),
+                 stringsAsFactors = FALSE)
 
     }) %>% bind_rows()
   }) %>% bind_rows() %>%
     arrange(p)
+  if (!plot) {
+    return(resTab)
 
-  return(resTab)
+  } else {
+    #plot pvalue heatmap
+    plotTab <- resTab %>%
+      mutate(pPlot = ifelse(rep(ifFdr, nrow(resTab)), -log10(p.adj), -log10(p))) %>%
+      mutate(pPlot = ifelse(pPlot <= -log10(pCut),0,pPlot)) %>%
+      mutate(pPlot = ifelse(pPlot >= pMax, pMax, pPlot))
+
+    p <- ggplot(plotTab, aes(x=var2, y=var1, fill = pPlot)) +
+      geom_tile() +
+      scale_fill_gradient(low = "grey", high= "red", name = ifelse(ifFdr, "-log10(adjusted P-value)","-log10(P-Value)")) +
+      theme_void() +
+      scale_y_discrete(expand = c(0,0)) +
+      scale_x_discrete(expand = c(0,0)) +
+      ggtitle("Association P-value heatmap") +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+            axis.text.y = element_text(hjust = 1),
+            plot.title = element_text(face = "bold", hjust = 0.5))
+
+    return(list(resTab=resTab, plot = p))
+  }
 }
