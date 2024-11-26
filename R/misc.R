@@ -297,21 +297,25 @@ glog2 <- function(x) {
 #' @param pCut cut-off for p-value or adjusted p-value
 #' @param ifFdr whether to show nominal P-value or adjusted P-value
 #' @param pMax censoring the -log10(P-value) or -log10(adjusted P-value) above this threshold. Default value is 12
+#' @param onlySignificant only show associations passed certain significance level
 #' @return a table with test results
 #' @export
 #'
 #'
 testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson", plot = FALSE,
-                            pCut = 0.01, ifFdr = FALSE, pMax = 12) {
+                            pCut = 0.01, ifFdr = FALSE, pMax = 12, onlySignificant = FALSE) {
   fullTab <- left_join(tabX, tabY, by = joinID)
-  resTab <- lapply(seq(ncol(tabX)-1), function(i) {
-    lapply(seq(ncol(tabY)-1), function(j) {
 
-      indexX <- i+1
-      indexY <- ncol(tabX) + j
+  #get column names
+  colNamesX <- colnames(tabX)
+  colNamesX <- colNamesX[colNamesX != joinID]
+  colNamesY <- colnames(tabY)
+  colNamesY <- colNamesY[colNamesY != joinID]
 
-      var1 <- fullTab[[indexX]]
-      var2 <- fullTab[[indexY]]
+  resTab <- lapply(colNamesX, function(colX) {
+    lapply(colNamesY, function(colY) {
+      var1 <- fullTab[[colX]]
+      var2 <- fullTab[[colY]]
 
       p <- tryCatch({
         if (is.numeric(var1) & is.numeric(var2)) {
@@ -326,26 +330,41 @@ testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson", 
           aovRes[[1]][5][1,1]
         }}, error = function(err) NA)
 
-      data.frame(var1 = colnames(tabX)[i+1], var2 = colnames(tabY)[j+1],
+      data.frame(var1 = colX, var2 = colY,
                  p = p, p.adj = p.adjust(p, method = "BH"),
                  stringsAsFactors = FALSE)
 
     }) %>% bind_rows()
   }) %>% bind_rows() %>%
     arrange(p)
+
   if (!plot) {
     return(resTab)
 
   } else {
     #plot pvalue heatmap
+
     plotTab <- resTab %>%
       mutate(pPlot = ifelse(rep(ifFdr, nrow(resTab)), -log10(p.adj), -log10(p))) %>%
       mutate(pPlot = ifelse(pPlot <= -log10(pCut),0,pPlot)) %>%
       mutate(pPlot = ifelse(pPlot >= pMax, pMax, pPlot))
 
+    if (onlySignificant) {
+      sigTab <- filter(plotTab, pPlot !=0)
+      plotTab <- filter(plotTab, var1 %in% sigTab$var1 , var2 %in% sigTab$var2)
+    }
+
+    #if "PC", "Factor" are detected in var1, then re-level var1 based on values without suffix
+    if (any(str_detect(plotTab$var1,"Factor|PC"))) {
+      plotTab <- mutate(plotTab, indexNoSuffix = str_remove(var1, "Factor|PC")) %>%
+        mutate(indexNoSuffix = as.numeric(indexNoSuffix)) %>%
+        arrange(desc(indexNoSuffix)) %>%
+        mutate(var1= factor(var1, levels = unique(var1)))
+    }
+
     p <- ggplot(plotTab, aes(x=var2, y=var1, fill = pPlot)) +
-      geom_tile() +
-      scale_fill_gradient(low = "grey", high= "red", name = ifelse(ifFdr, "-log10(adjusted P-value)","-log10(P-Value)")) +
+      geom_tile(color = "black") +
+      scale_fill_gradient(low = "grey", high= "red", name = ifelse(ifFdr, "-log10(adj. Pval)","-log10(Pval)")) +
       theme_void() +
       scale_y_discrete(expand = c(0,0)) +
       scale_x_discrete(expand = c(0,0)) +
