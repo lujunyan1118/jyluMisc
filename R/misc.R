@@ -331,12 +331,13 @@ testAssociation <- function(tabX, tabY, joinID, correlation_method = "pearson", 
         }}, error = function(err) NA)
 
       data.frame(var1 = colX, var2 = colY,
-                 p = p, p.adj = p.adjust(p, method = "BH"),
+                 p = p,
                  stringsAsFactors = FALSE)
 
     }) %>% bind_rows()
   }) %>% bind_rows() %>%
-    arrange(p)
+    arrange(p) %>%
+    mutate(p.adj = p.adjust(p, method ="BH"))
 
   if (!plot) {
     return(resTab)
